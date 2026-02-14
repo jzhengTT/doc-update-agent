@@ -36,10 +36,19 @@ If verification fails, the failure report is fed back to the updater, which fixe
 ```bash
 git clone <this-repo>
 cd doc-update-agent
+python -m venv .venv
+source .venv/bin/activate
 pip install -e .
 ```
 
 Set your API key:
+
+```bash
+cp .env.example .env
+# Edit .env and add your Anthropic API key
+```
+
+Or export it directly:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
