@@ -1,0 +1,22 @@
+[project]
+name = "doc-updater"
+version = "0.1.0"
+description = "Automatically update developer documentation from source code changes"
+requires-python = ">=3.10"
+dependencies = [
+    "claude-agent-sdk",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio"]
+
+[project.scripts]
+doc-updater = "doc_updater.cli:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[tool.setuptools.packages.find]
+where = ["src"]

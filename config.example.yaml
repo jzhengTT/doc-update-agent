@@ -1,0 +1,9 @@
+# doc-updater configuration
+docker_image: python:3.11-slim
+max_iterations: 3
+create_pr: false
+
+doc_types:
+  setup:
+    - docs/getting-started.md
+    - docs/setup.md
