@@ -80,6 +80,7 @@ async def run_pipeline(config: Config) -> PipelineResult:
             "mcp__doctools__setup_verification_env",
             "mcp__doctools__teardown_verification_env",
             "mcp__doctools__create_git_branch",
+            "mcp__doctools__commit_changes",
             "mcp__doctools__get_git_diff",
         ],
         agents=agents,
@@ -117,6 +118,16 @@ async def run_pipeline(config: Config) -> PipelineResult:
             await client.query(analysis_prompt)
             analysis_result = await _collect_result(client)
             print_progress("Analysis complete")
+
+            # ── CREATE WORKING BRANCH ──
+            if not config.dry_run:
+                print_phase("Creating working branch in docs repo")
+                await client.query(
+                    f"Use the create_git_branch tool to create a branch named "
+                    f"'docs/auto-update' from 'main' in {config.docs_repo_path}."
+                )
+                await _collect_result(client)
+                print_progress("Branch 'docs/auto-update' created from main")
 
             # ── PHASE 2 + 3 LOOP ──
             verification_failure_context = ""
@@ -189,17 +200,17 @@ async def run_pipeline(config: Config) -> PipelineResult:
                     f"Creating PR with best-effort documentation."
                 )
 
-            # ── CREATE BRANCH + DIFF ──
+            # ── COMMIT + DIFF ──
             if not config.dry_run:
-                print_phase("Creating branch and diff")
+                print_phase("Committing changes and generating diff")
                 await client.query(
-                    f"Use the create_git_branch tool to create a branch named "
-                    f"'docs/auto-update' in {config.docs_repo_path} with commit "
-                    f"message 'docs: auto-update setup documentation'. "
-                    f"Then use get_git_diff to show the changes."
+                    f"Use the commit_changes tool to stage and commit all changes "
+                    f"in {config.docs_repo_path} with commit message "
+                    f"'docs: auto-update setup documentation'. "
+                    f"Then use get_git_diff to show the changes vs main."
                 )
                 pr_diff = await _collect_result(client)
-                print_progress("Branch created")
+                print_progress("Changes committed")
 
                 if config.create_pr:
                     print_phase("Creating pull request")

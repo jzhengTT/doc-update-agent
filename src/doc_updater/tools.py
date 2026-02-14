@@ -87,21 +87,50 @@ async def teardown_verification_env(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "create_git_branch",
-    "Create a new git branch in a repository and stage all changes",
-    {"repo_path": str, "branch_name": str, "commit_message": str},
+    "Create a new git branch from the current main branch in a repository",
+    {"repo_path": str, "branch_name": str, "base_branch": str},
 )
 async def create_git_branch(args: dict[str, Any]) -> dict[str, Any]:
-    """Create a branch, stage all changes, and commit."""
+    """Create a new branch from the base branch (default: main)."""
     repo = args["repo_path"]
     branch = args["branch_name"]
-    message = args.get("commit_message", "docs: auto-update documentation")
+    base = args.get("base_branch", "main")
 
+    # Ensure we're starting from the latest base branch
+    subprocess.run(
+        ["git", "checkout", base],
+        cwd=repo,
+        capture_output=True,
+        check=True,
+    )
     subprocess.run(
         ["git", "checkout", "-b", branch],
         cwd=repo,
         capture_output=True,
         check=True,
     )
+
+    return {
+        "content": [
+            {
+                "type": "text",
+                "text": f"Branch '{branch}' created from '{base}'. "
+                        f"All subsequent changes will be on this branch.",
+            }
+        ]
+    }
+
+
+@tool(
+    "commit_changes",
+    "Stage and commit all changes in a repository",
+    {"repo_path": str, "commit_message": str},
+)
+async def commit_changes(args: dict[str, Any]) -> dict[str, Any]:
+    """Stage all changes and commit."""
+    repo = args["repo_path"]
+    message = args.get("commit_message", "docs: auto-update documentation")
+
     subprocess.run(
         ["git", "add", "-A"],
         cwd=repo,
@@ -119,7 +148,7 @@ async def create_git_branch(args: dict[str, Any]) -> dict[str, Any]:
         "content": [
             {
                 "type": "text",
-                "text": f"Branch '{branch}' created and committed.\n{result.stdout}",
+                "text": f"Changes committed.\n{result.stdout}",
             }
         ]
     }
@@ -157,6 +186,7 @@ def create_custom_tools_server(config: Config):
             setup_verification_env,
             teardown_verification_env,
             create_git_branch,
+            commit_changes,
             get_git_diff,
         ],
     )
