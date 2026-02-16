@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+import time
+
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
@@ -13,6 +16,7 @@ from claude_agent_sdk import (
     ProcessError,
     ResultMessage,
     TextBlock,
+    ToolUseBlock,
 )
 
 from .agents import (
@@ -23,19 +27,106 @@ from .agents import (
 from .config import Config
 from .hooks import create_safety_hooks
 from .models import PipelineResult
-from .output import print_error, print_phase, print_progress, print_result
+from .output import (
+    print_command,
+    print_command_output,
+    print_error,
+    print_phase,
+    print_progress,
+    print_result,
+)
 from .permissions import create_permission_handler
 from .tools import create_custom_tools_server
 
 
-async def _collect_result(client: ClaudeSDKClient) -> str:
-    """Consume messages from the client until a ResultMessage, return text."""
+def _build_branch_name(config: Config) -> str:
+    """Generate a descriptive branch name from context or doc file targets."""
+    timestamp = int(time.time())
+    prefix = "agent/docs"
+
+    if config.user_context:
+        # Derive a slug from the first ~60 chars of the user context
+        slug = config.user_context[:60].lower()
+        slug = re.sub(r"[^a-z0-9]+", "-", slug)  # replace non-alphanum with -
+        slug = slug.strip("-")
+        return f"{prefix}/{slug}-{timestamp}"
+
+    # Fall back to the target doc file names
+    file_slugs = []
+    for f in config.target_doc_files[:3]:
+        # "docs/getting-started.md" -> "getting-started"
+        name = f.rsplit("/", 1)[-1].removesuffix(".md").removesuffix(".rst")
+        file_slugs.append(name)
+    slug = "-".join(file_slugs) if file_slugs else "update"
+    return f"{prefix}/{slug}-{timestamp}"
+
+
+def _summarize_tool_call(block: ToolUseBlock) -> str:
+    """Return a short one-line summary of a tool invocation."""
+    name = block.name
+    args = block.input
+
+    if name == "Read":
+        return f"Reading {args.get('file_path', '?')}"
+    if name == "Write":
+        return f"Writing {args.get('file_path', '?')}"
+    if name == "Edit":
+        return f"Editing {args.get('file_path', '?')}"
+    if name == "Bash":
+        cmd = args.get("command", "")
+        if len(cmd) > 80:
+            cmd = cmd[:77] + "..."
+        return f"Running: {cmd}"
+    if name == "Glob":
+        return f"Searching for {args.get('pattern', '?')}"
+    if name == "Grep":
+        return f"Grep: {args.get('pattern', '?')}"
+    if name == "Task":
+        agent = args.get("subagent_type", args.get("description", "?"))
+        return f"Delegating to {agent}"
+
+    # MCP tools and others — show tool name + first arg value
+    if args:
+        first_val = str(next(iter(args.values())))
+        if len(first_val) > 60:
+            first_val = first_val[:57] + "..."
+        return f"{name}: {first_val}"
+    return name
+
+
+async def _collect_result(
+    client: ClaudeSDKClient,
+    quiet: bool = False,
+    show_commands: bool = False,
+) -> str:
+    """Consume messages from the client until a ResultMessage, return text.
+
+    Args:
+        quiet: Suppress all progress output.
+        show_commands: Show Bash commands and their outputs (for Phase 3).
+    """
     texts: list[str] = []
+    # Track whether the last tool call was a Bash command so we can
+    # display the next text block as its output.
+    awaiting_bash_output = False
+
     async for message in client.receive_response():
         if isinstance(message, AssistantMessage):
             for block in message.content:
                 if isinstance(block, TextBlock):
                     texts.append(block.text)
+                    if show_commands and awaiting_bash_output:
+                        print_command_output(block.text)
+                        awaiting_bash_output = False
+                elif isinstance(block, ToolUseBlock):
+                    if quiet:
+                        continue
+                    if show_commands and block.name == "Bash":
+                        cmd = block.input.get("command", "")
+                        print_command(cmd)
+                        awaiting_bash_output = True
+                    else:
+                        print_progress(_summarize_tool_call(block))
         elif isinstance(message, ResultMessage):
             if message.result:
                 texts.append(message.result)
@@ -120,14 +211,15 @@ async def run_pipeline(config: Config) -> PipelineResult:
             print_progress("Analysis complete")
 
             # ── CREATE WORKING BRANCH ──
+            branch_name = _build_branch_name(config)
             if not config.dry_run:
                 print_phase("Creating working branch in docs repo")
                 await client.query(
                     f"Use the create_git_branch tool to create a branch named "
-                    f"'docs/auto-update' from 'main' in {config.docs_repo_path}."
+                    f"'{branch_name}' from 'main' in {config.docs_repo_path}."
                 )
-                await _collect_result(client)
-                print_progress("Branch 'docs/auto-update' created from main")
+                await _collect_result(client, quiet=True)
+                print_progress(f"Branch '{branch_name}' created from main")
 
             # ── PHASE 2 + 3 LOOP ──
             verification_failure_context = ""
@@ -184,7 +276,9 @@ async def run_pipeline(config: Config) -> PipelineResult:
                     )
 
                 await client.query(verify_prompt)
-                verify_result = await _collect_result(client)
+                verify_result = await _collect_result(
+                    client, show_commands=True
+                )
 
                 if _verification_passed(verify_result):
                     print_result("Verification PASSED")
@@ -209,7 +303,7 @@ async def run_pipeline(config: Config) -> PipelineResult:
                     f"'docs: auto-update setup documentation'. "
                     f"Then use get_git_diff to show the changes vs main."
                 )
-                pr_diff = await _collect_result(client)
+                pr_diff = await _collect_result(client, quiet=True)
                 print_progress("Changes committed")
 
                 if config.create_pr:
