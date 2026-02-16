@@ -1,0 +1,20 @@
+give me the command if i were to run this in the terminal
+the --code-repo is at /home/josh/Projects/tt-installer
+the --docs-repo is at /home/josh/Projects/tenstorrent.github.io
+the --doc-files is at core/getting-started/README.md
+
+--context TEXT is the following
+Pay special attention to the readme of tt-install as those instructions should be most update to date
+There are a few things that need to be updated-
+- the TT-installer user process has changed; users don’t need to answer all those questions anymore, they just need to say that yes they want a default installation 
+- TT-studio is now installed by default and we should tell users to use it. the page for tt-studio doesn't yet exist and creating the docs for it is out of the scope of this work for now. but just mention that the user should use tt-studio
+- The tt-inference-server and model container docs are confusing and should be touched up for ease of use
+
+doc-updater \
+  --code-repo /home/josh/Projects/tt-installer \
+  --docs-repo /home/josh/Projects/tenstorrent.github.io \
+  --doc-files core/getting-started/README.md \
+  --context "There are a few things that need to be updated-
+- the TT-installer user process has changed; users don't need to answer all those questions anymore, they just need to say that yes they want a default installation 
+- TT-studio is now installed by default and we should tell users to use it. the page for tt-studio doesn't yet exist and creating the docs for it is out of the scope of this work for now. but just mention that the user should use tt-studio
+- The tt-inference-server and model container docs are confusing and should be touched up for ease of use"
